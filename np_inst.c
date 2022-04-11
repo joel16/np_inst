@@ -5,6 +5,7 @@
 #include <common_imp.h>
 #include <iofilemgr_kernel.h>
 #include <sysmem_sysclib.h>
+#include <threadman_kernel.h>
 
 SCE_MODULE_INFO("sceNpInstall_Driver", SCE_MODULE_KERNEL | SCE_MODULE_KIRK_SEMAPHORE_LIB | SCE_MODULE_ATTR_EXCLUSIVE_LOAD
     | SCE_MODULE_ATTR_EXCLUSIVE_START, 1, 1);
@@ -37,9 +38,11 @@ typedef struct {
 // Global vars
 u8 g_buf[0x10];           // 0x000009C0
 u64 g_destTick;           // 0x000009D0
-SceConsoleId g_consoleId; // 
+SceConsoleId g_consoleId; //
+SceUID g_fd;              // 0x000009D8
 
 // Function prototypes
+int sceKernelTerminateThread(SceUID thid);
 s32 sceNpDrmDecActivation(u32 *, u8 *);
 s32 sceNpDrmVerifyAct(u32 *data);
 s32 sceOpenPSIDGetPSID(SceConsoleId *consoleID, u32);
@@ -79,10 +82,34 @@ s32 sub_00000374(u32 *data, u32 size, u32 *arg)
     return 0;
 }
 
+s32 removeActivation(SceSize args __attribute__((unused)), void *argp __attribute__((unused))) {
+    g_fd = sceIoRemove("flash2:/act.dat");
+    return 0;
+}
+
 // Subroutine sub_000005AC - Address 0x000005AC
 s32 sub_000005AC(void)
 {
-    return 0;
+    SceUID thread = sceKernelCreateThread("SceNpDeactivation", removeActivation, 0x20, 0x4000, 0, NULL);
+    
+    if (thread >= 0) {
+        g_fd = 0;
+        s32 status = sceKernelStartThread(thread, 0, NULL);
+        
+        if (status >= 0) {
+            SceUInt timeout = 0;
+            status = sceKernelWaitThreadEnd(thread, &timeout);
+            
+            if (status >= 0)
+                status = g_fd; // Verify this
+        }
+        
+        sceKernelTerminateThread(thread);
+        sceKernelDeleteThread(thread);
+        return status;
+    }
+    
+    return thread;
 }
 
 // Subroutine sub_000004C4 - Address 0x000004C4
