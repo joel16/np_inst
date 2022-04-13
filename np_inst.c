@@ -33,36 +33,48 @@ typedef struct {
 	/* Lower six bit of the PsFlags. Contain the QA flag, if set. */
 	u8 psFlagsMinor : 6; // 9
 	u8 uniqueIdMinor[6]; // 10
-} SceConsoleId; // size = 16
+} SceConsoleId; // size = 0x10
 
 // act.dat structure based on https://wiki.henkaku.xyz/vita/Act.dat
 typedef struct {
-    u32 activationType;
+    u32 activationType; 
     u32 version;
     u32 accountID[2];
-    u8 primaryKeyTable[0x800];
+} AccountDataInfo; // size = 0x10
+
+typedef struct {
     u8 unk1[0x40];
     SceConsoleId consoleId;
     u8 unk3[0x10];
     u8 unk4[0x10];
+} AccountDataEnc; // size = 0x70
+
+typedef struct {
     u8 secondaryTable[0x650];
     u8 rsaSignature[0x100];
     u8 unkSignature[0x40];
     u8 ecdsaSignature[0x28];
-} AccountData; // Act.dat
+} AccountDataSig; // size = 0x7B8
+
+typedef struct {
+    AccountDataInfo info;
+    u8 primaryKeyTable[0x800];
+    AccountDataEnc encData;
+    AccountDataSig sigInfo;
+} AccountData; // size = 0x1038
 
 // Global vars
-u8 g_buf[0x10];            // 0x000009C0
-u64 g_destTick;            // 0x000009D0
-SceConsoleId g_consoleId;  //
-SceUID g_fd;               // 0x000009D8
+AccountDataInfo *g_info;  // 0x000009C0
+u64 g_destTick;           // 0x000009D0
+SceConsoleId g_consoleId; //
+SceUID g_fd;              // 0x000009D8
 
 // Function prototypes
 s32 sceKernelTerminateThread(SceUID thid);
-s32 sceNpDrmDecActivation(u32 *, u8 *);
-s32 sceNpDrmVerifyAct(u32 *data);
+s32 sceNpDrmDecActivation(u32 *, AccountDataInfo *);
+s32 sceNpDrmVerifyAct(u32 *);
 s32 sceOpenPSIDGetPSID(SceConsoleId *consoleID, u32);
-s32 scePcactAuth2BB(u32 *, u32*, u8 *);
+s32 scePcactAuth2BB(u32 *, u32*, AccountDataInfo *);
 s32 scePcactAuth1BB();
 s32 sceRtc_driver_89FA4262(u64 *destTick, const u64 *srcTick, u64 numSecs);
 s32 sceRtc_driver_CEEF238F(u64 *tick);
@@ -90,12 +102,35 @@ s32 sub_0000016C(s32 arg0, u32 *arg1, u32 *arg2, u32 *arg3)
 }
 
 // Subroutine sub_00000374 - Address 0x00000374
-s32 sub_00000374(u32 *data, u32 size, u32 *arg)
+s32 sub_00000374(u32 *data, u32 size, u32 *arg2)
 {
-    (void)data;
-    (void)size;
-    (void)arg;
-    return 0;
+    s32 ret = 0;
+    
+    if ((!data) || (size != 0x1090) || (!arg2))
+        return 0x80550980;
+        
+    if (((ret = scePcactAuth2BB(data, arg2, g_info)) >= 0) && ((ret = sceNpDrmDecActivation(data + 0x50, g_info)) >= 0)
+        && ((ret = sceNpDrmVerifyAct(data + 0x50)) >= 0)) {
+            SceUID fd = sceIoOpen("flash2:/act.dat", 0x04000602, 0x1B6);
+            
+            if (fd >= 0) {
+                ret = sceIoWrite(fd, data + 0x50, 0x1038);
+                
+                if (ret != 0x1038) {
+                    if (ret >= 0)
+                        ret = 0x80550981; // Read some bytes but incorrect data
+                }
+            }
+            
+            sceIoClose(fd);
+    }
+    else
+        sceIoRemove("flash2:/act.dat");
+        
+    memset(data + 0x50, 0, 0x1040);
+    memset(arg2, 0, 0x40);
+    memset(g_info, 0, 0x10);
+    return ret;
 }
 
 s32 removeActivation(SceSize args __attribute__((unused)), void *argp __attribute__((unused))) {
@@ -148,8 +183,8 @@ s32 sub_000004C4(u32 *addr) {
                 ret = 0x80550982; // Did not read any bytes
         }
         else {
-            addr[0] = act.accountID[0];
-            addr[1] = act.accountID[1];
+            addr[0] = act.info.accountID[0];
+            addr[1] = act.info.accountID[1];
         }
         
         sceIoClose(fd);
