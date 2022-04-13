@@ -35,14 +35,30 @@ typedef struct {
 	u8 uniqueIdMinor[6]; // 10
 } SceConsoleId; // size = 16
 
+// act.dat structure based on https://wiki.henkaku.xyz/vita/Act.dat
+typedef struct {
+    u32 activationType;
+    u32 version;
+    u32 accountID[2];
+    u8 primaryKeyTable[0x800];
+    u8 unk1[0x40];
+    SceConsoleId consoleId;
+    u8 unk3[0x10];
+    u8 unk4[0x10];
+    u8 secondaryTable[0x650];
+    u8 rsaSignature[0x100];
+    u8 unkSignature[0x40];
+    u8 ecdsaSignature[0x28];
+} AccountData; // Act.dat
+
 // Global vars
-u8 g_buf[0x10];           // 0x000009C0
-u64 g_destTick;           // 0x000009D0
-SceConsoleId g_consoleId; //
-SceUID g_fd;              // 0x000009D8
+u8 g_buf[0x10];            // 0x000009C0
+u64 g_destTick;            // 0x000009D0
+SceConsoleId g_consoleId;  //
+SceUID g_fd;               // 0x000009D8
 
 // Function prototypes
-int sceKernelTerminateThread(SceUID thid);
+s32 sceKernelTerminateThread(SceUID thid);
 s32 sceNpDrmDecActivation(u32 *, u8 *);
 s32 sceNpDrmVerifyAct(u32 *data);
 s32 sceOpenPSIDGetPSID(SceConsoleId *consoleID, u32);
@@ -114,8 +130,32 @@ s32 sub_000005AC(void)
 
 // Subroutine sub_000004C4 - Address 0x000004C4
 s32 sub_000004C4(u32 *addr) {
-    (void)addr;
-    return 0;
+    s32 ret = 0x80550980;
+    AccountData act;
+    
+    if (!addr)
+        return ret;
+        
+    SceUID fd = sceIoOpen("flash2:/act.dat", 0x04000001, 0);
+    if (fd >= 0) {
+        // Return bytes read (16) if success
+        ret = sceIoRead(fd, &act, 0x10);
+        
+        if (ret != 0x10) {
+            if (ret >= 0)
+                ret = 0x80550981; // Read some bytes but incorrect data
+            else
+                ret = 0x80550982; // Did not read any bytes
+        }
+        else {
+            addr[0] = act.accountID[0];
+            addr[1] = act.accountID[1];
+        }
+        
+        sceIoClose(fd);
+    }
+    
+    return ret;
 }
 
 // Subroutine sceNpInstall_driver_0B039B36 - Address 0x00000088 - Aliases: sceNpInstall_user_0B039B36
