@@ -40,42 +40,42 @@ typedef struct {
     u32 activationType; 
     u32 version;
     u32 accountID[2];
-} AccountDataInfo; // size = 0x10
+} __attribute__((packed)) AccountInfo; // size = 0x10
 
 typedef struct {
     u8 unk1[0x40];
     SceConsoleId consoleId;
     u8 unk3[0x10];
     u8 unk4[0x10];
-} AccountDataEnc; // size = 0x70
+} __attribute__((packed)) AccountDataEnc; // size = 0x70
 
 typedef struct {
-    u8 secondaryTable[0x650];
     u8 rsaSignature[0x100];
     u8 unkSignature[0x40];
     u8 ecdsaSignature[0x28];
-} AccountDataSig; // size = 0x7B8
+} __attribute__((packed)) AccountDataSig; // size = 0x168
 
 typedef struct {
-    AccountDataInfo info;
-    u8 primaryKeyTable[0x800];
-    AccountDataEnc encData;
-    AccountDataSig sigInfo;
-} AccountData; // size = 0x1038
+    AccountInfo info;                  // 0
+    u8 primaryKeyTable[0x800];         // 0x10
+    AccountDataEnc encData;            // 0x810
+    u8 secondaryTable[0x650];          // 0x880
+    AccountDataSig sigInfo;            // 0xED0
+} __attribute__((packed)) AccountData; // 0x1038
 
 // Global vars
-AccountDataInfo *g_info;  // 0x000009C0
+AccountInfo *g_info;      // 0x000009C0
 u64 g_destTick;           // 0x000009D0
 SceConsoleId g_consoleId; //
 SceUID g_fd;              // 0x000009D8
 
 // Function prototypes
 s32 sceKernelTerminateThread(SceUID thid);
-s32 sceNpDrmDecActivation(u32 *, AccountDataInfo *);
+s32 sceNpDrmDecActivation(u32 *, AccountInfo *);
 s32 sceNpDrmVerifyAct(u32 *);
 s32 sceOpenPSIDGetPSID(SceConsoleId *consoleID, u32);
-s32 scePcactAuth2BB(u32 *, u32*, AccountDataInfo *);
-s32 scePcactAuth1BB();
+s32 scePcactAuth1BB(u32, SceConsoleId, void *, void *, u32, u32);
+s32 scePcactAuth2BB(u32 *, u32*, AccountInfo *);
 s32 sceRtc_driver_89FA4262(u64 *destTick, const u64 *srcTick, u64 numSecs);
 s32 sceRtc_driver_CEEF238F(u64 *tick);
 
@@ -152,7 +152,7 @@ s32 sub_000005AC(void)
             status = sceKernelWaitThreadEnd(thread, &timeout);
             
             if (status >= 0)
-                status = g_fd; // Verify this
+                status = g_fd; // if sceKernelWaitThreadEnd succeeds set status to g_fd and return it
         }
         
         sceKernelTerminateThread(thread);
